@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Châteaux et demeures d'Île-de-France | TP2 SIG</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    :root{--blue:#142d4e;--ink:#18314f;--muted:#66778d;--bg:#f2f5f9;--line:#dfe7f0}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);font:15px/1.5 Arial,Helvetica,sans-serif;color:var(--ink)}
+    header{background:linear-gradient(115deg,#122d4d,#225c85);color:white;padding:34px max(22px,calc((100vw - 1250px)/2));}
+    .eyebrow{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#c7e5fb;font-weight:700}h1{font-size:clamp(25px,3vw,36px);margin:8px 0}header p{color:#e6eff8;margin:4px 0}
+    main{max-width:1300px;margin:auto;padding:22px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:16px 0 22px}
+    .card,.panel{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 3px 14px rgba(10,45,75,.045)}
+    .card{padding:18px}.card label{display:block;font-size:13px;color:var(--muted);font-weight:bold}.card strong{display:block;font-size:32px;color:#12609b;margin-top:4px}.card strong.small{font-size:18px;line-height:1.4;margin-top:9px}
+    .layout{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(280px,1fr);gap:18px}.panel{padding:18px;margin-bottom:18px}h2{margin:0 0 12px;font-size:19px}
+    #map{width:100%;height:520px;border-radius:8px;background:#e5eaf0}.controls{display:flex;flex-wrap:wrap;gap:15px;margin-bottom:12px;font-size:13px}.controls label{cursor:pointer}
+    .legend{display:flex;flex-wrap:wrap;gap:8px 13px;margin-top:12px;font-size:12px}.swatch{width:11px;height:11px;display:inline-block;border-radius:50%;margin-right:5px}
+    .chart-row{margin:0 0 20px}.chart-label{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:5px}.track{height:17px;background:#eef3f7;border-radius:5px;overflow:hidden}.bar{height:100%;border-radius:5px}
+    .fine{font-size:12px;color:var(--muted)}.status{padding:10px;border-radius:8px;background:#f5f8fb;color:var(--muted)}.error{background:#fff0f0;color:#a32121}
+    footer{text-align:center;color:var(--muted);padding:12px 22px 28px;font-size:12px}
+    @media(max-width:850px){.cards{grid-template-columns:repeat(2,1fr)}.layout{grid-template-columns:1fr}#map{height:430px}}
+    @media(max-width:500px){.cards{grid-template-columns:1fr 1fr}.card{padding:12px}.card strong{font-size:25px}main{padding:12px}}
+  </style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">ESTP · SIG & CIM · Travaux pratiques 2</div>
+  <h1>Châteaux et demeures d'Île-de-France</h1>
+  <p>Distribution spatiale, importance patrimoniale et répartition par catégorie</p>
+  <p>MENI Daniel · SAMBO Nabil</p>
+</header>
+<main>
+  <section class="panel">
+    <h2>Objectif de l'analyse</h2>
+    <p>Ce tableau de bord étudie la localisation des châteaux et demeures en Île-de-France et leur classement selon leur intérêt local, supra-local, régional ou national/international. Il présente les sites sur une carte interactive et les compare à l'échelle des communes et des départements.</p>
+  </section>
+  <div class="cards">
+    <div class="card"><label>Châteaux et demeures</label><strong id="total">—</strong></div>
+    <div class="card"><label>Catégories</label><strong id="nbCat">—</strong></div>
+    <div class="card"><label>Communes avec des sites</label><strong id="nbCommunes">—</strong></div>
+    <div class="card"><label>Catégorie la plus représentée</label><strong id="dominante" class="small">—</strong></div>
+  </div>
+  <div class="layout">
+    <section class="panel">
+      <h2>Carte interactive du patrimoine</h2>
+      <div class="controls">
+        <label><input id="toggleChateaux" type="checkbox" checked> Châteaux</label>
+        <label><input id="toggleCommunes" type="checkbox"> Communes</label>
+        <label><input id="toggleDepartements" type="checkbox" checked> Départements</label>
+      </div>
+      <div id="map" aria-label="Carte des châteaux d'Île-de-France"></div>
+      <div class="legend" id="legend"></div>
+      <p class="fine">Cliquez sur les points pour afficher le nom, la catégorie, la commune et l'adresse du site. Activez ou désactivez les limites administratives ci-dessus.</p>
+    </section>
+    <aside>
+      <section class="panel"><h2>Répartition par catégorie</h2><div id="graphique">Chargement des données…</div></section>
+      <section class="panel"><h2>Lecture des résultats</h2><p id="interpretation">Calcul des résultats en cours…</p><div class="status" id="status">Chargement des fichiers GeoJSON…</div></section>
+    </aside>
+  </div>
+</main>
+<footer>Sources : fichiers GeoJSON fournis pour le TP2 · Fond cartographique © contributeurs OpenStreetMap</footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const FICHIERS = {
+    chateaux: 'data/Chateaux_demeu_FeaturesToJSO.geojson',
+    communes: 'data/communes_simpl_FeaturesToJSO.geojson',
+    departements: 'data/departement_ID_FeaturesToJSO.geojson'
+  };
+  const definitions = [
+    {prefix: '1', label: 'Intérêt local', color: '#bf4564'},
+    {prefix: '2', label: 'Intérêt supra-local', color: '#43a15e'},
+    {prefix: '3', label: 'Intérêt régional', color: '#209dc7'},
+    {prefix: '4', label: 'Intérêt national / international', color: '#6258b8'}
+  ];
+  const carte = L.map('map').setView([48.75,2.35],9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
+  }).addTo(carte);
+  const calques = {};
+  const echapper = value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  function definition(categorie) {return definitions.find(d=>String(categorie).trim().startsWith(d.prefix+' ')) || {label:'Autre',color:'#888888'};}
+  async function charger(chemin) {
+    const response = await fetch(chemin);
+    if(!response.ok) throw new Error(chemin+' : HTTP '+response.status);
+    const obj = await response.json();
+    if(obj.type !== 'FeatureCollection' || !Array.isArray(obj.features)) throw new Error('Format GeoJSON invalide : '+chemin);
+    return obj;
+  }
+  function activer(id,calque) {
+    document.getElementById(id).addEventListener('change', e=>e.target.checked ? calque.addTo(carte) : carte.removeLayer(calque));
+  }
+  async function initialiser() {
+    try {
+      const [chateaux,communes,departements] = await Promise.all([charger(FICHIERS.chateaux),charger(FICHIERS.communes),charger(FICHIERS.departements)]);
+      calques.communes = L.geoJSON(communes,{style:{color:'#6b849d',weight:0.65,opacity:0.7,fillOpacity:0.015},onEachFeature:(f,layer)=>layer.bindPopup('Commune : '+echapper(f.properties?.nomcom))});
+      calques.departements = L.geoJSON(departements,{style:{color:'#243d59',weight:2,fillOpacity:0,opacity:0.75},onEachFeature:(f,layer)=>layer.bindPopup('Département : '+echapper(f.properties?.NumDep))}).addTo(carte);
+      calques.chateaux = L.geoJSON(chateaux,{
+        pointToLayer:(f,ll)=>L.circleMarker(ll,{radius:6,color:'#fff',weight:1.2,fillColor:definition(f.properties?.Categorie).color,fillOpacity:0.95}),
+        onEachFeature:(f,layer)=>{
+          const p=f.properties||{};
+          layer.bindPopup('<strong>'+echapper(p.NOM_CARTO||p.NOM)+'</strong><br>'+echapper(p.Categorie)+'<br>Commune : '+echapper(p.NOMCOM)+'<br>Adresse : '+echapper(p.ADRESSE));
+        }
+      }).addTo(carte);
+      const limites = calques.departements.getBounds();
+      if(limites.isValid()) carte.fitBounds(limites.pad(0.04));
+      activer('toggleChateaux',calques.chateaux);
+      activer('toggleCommunes',calques.communes);
+      activer('toggleDepartements',calques.departements);
+      const effectifs = Object.fromEntries(definitions.map(d=>[d.prefix,0]));
+      for(const feature of chateaux.features){const prefix=definition(feature.properties?.Categorie).prefix;if(prefix in effectifs) effectifs[prefix]++;}
+      const communesSites = new Set(chateaux.features.map(f=>String(f.properties?.INSEE??f.properties?.NOMCOM??'')).filter(Boolean));
+      const dominante=definitions.reduce((best,d)=>effectifs[d.prefix]>effectifs[best.prefix]?d:best,definitions[0]);
+      document.getElementById('total').textContent=chateaux.features.length.toLocaleString('fr-FR');
+      document.getElementById('nbCat').textContent=definitions.filter(d=>effectifs[d.prefix]>0).length;
+      document.getElementById('nbCommunes').textContent=communesSites.size;
+      document.getElementById('dominante').textContent=dominante.label;
+      const max=Math.max(1,...Object.values(effectifs));
+      document.getElementById('graphique').innerHTML=definitions.map(d=>'<div class="chart-row"><div class="chart-label"><span>'+d.label+'</span><strong>'+effectifs[d.prefix]+'</strong></div><div class="track"><div class="bar" style="background:'+d.color+';width:'+(100*effectifs[d.prefix]/max)+'%"></div></div></div>').join('');
+      document.getElementById('legend').innerHTML=definitions.map(d=>'<span><span class="swatch" style="background:'+d.color+'"></span>'+d.label+'</span>').join('');
+      document.getElementById('interpretation').textContent='Les '+chateaux.features.length+' sites inventoriés se répartissent en '+definitions.filter(d=>effectifs[d.prefix]>0).length+' catégories et sont localisés dans '+communesSites.size+' communes (selon le champ INSEE des sites). La catégorie « '+dominante.label+' » domine, avec '+effectifs[dominante.prefix]+' sites, soit '+Math.round(effectifs[dominante.prefix]/chateaux.features.length*100)+' % du total. Les points de la carte permettent de comparer leur répartition géographique.';
+      document.getElementById('status').textContent='Données chargées : '+chateaux.features.length+' sites, '+communes.features.length+' communes, '+departements.features.length+' départements.';
+    }catch(error){console.error(error);const el=document.getElementById('status');el.classList.add('error');el.textContent='Erreur de chargement : '+error.message+'. Lancez index.html avec Live Server dans VS Code et vérifiez les fichiers du dossier data.';document.getElementById('graphique').textContent='Données indisponibles.';}
+  }
+  initialiser();
+</script>
+</body>
+</html>
